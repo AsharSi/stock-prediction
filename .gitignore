@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+/model/myenv
+model/__pycache__
+
 # production
 /build
 

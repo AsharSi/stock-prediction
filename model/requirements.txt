@@ -1,0 +1,8 @@
+fastapi
+pydantic
+pandas
+numpy
+tensorflow
+uvicorn
+joblib
+typing

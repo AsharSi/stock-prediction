@@ -1,7 +1,15 @@
 "use client";
-
 import type React from "react";
 
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +24,10 @@ import { format } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  getInventoryItemById,
+  getInventoryItems,
+} from "@/actions/inventoryActions";
 
 // Define the type for our inventory data
 interface InventoryItem {
@@ -30,107 +42,92 @@ interface InventoryItem {
   shortage_freq_7d: number;
   shortage_freq_30d: number;
   is_shortage: number;
+  probability: number;
 }
 
-// Sample inventory data
-const inventoryData: InventoryItem[] = [
-  {
-    item_encoded: 0,
-    total_observations: 744,
-    historical_shortage_prob: 0.009408602,
-    avg_shortage_qty: 0.080645161,
-    max_shortage_qty: 26,
-    total_shortage_qty: 60,
-    shortage_qty_7d_avg: 0,
-    shortage_qty_30d_avg: 0,
-    shortage_freq_7d: 0,
-    shortage_freq_30d: 0,
-    is_shortage: 0,
-  },
-  {
-    item_encoded: 1,
-    total_observations: 744,
-    historical_shortage_prob: 0.001344086,
-    avg_shortage_qty: 0.420698925,
-    max_shortage_qty: 313,
-    total_shortage_qty: 313,
-    shortage_qty_7d_avg: 0,
-    shortage_qty_30d_avg: 0,
-    shortage_freq_7d: 0,
-    shortage_freq_30d: 0,
-    is_shortage: 0,
-  },
-  {
-    item_encoded: 2,
-    total_observations: 744,
-    historical_shortage_prob: 0.010752688,
-    avg_shortage_qty: 0.127688172,
-    max_shortage_qty: 44,
-    total_shortage_qty: 95,
-    shortage_qty_7d_avg: 0,
-    shortage_qty_30d_avg: 0,
-    shortage_freq_7d: 0,
-    shortage_freq_30d: 0,
-    is_shortage: 0,
-  },
-  {
-    item_encoded: 3,
-    total_observations: 744,
-    historical_shortage_prob: 0.00672043,
-    avg_shortage_qty: 0.045698925,
-    max_shortage_qty: 10,
-    total_shortage_qty: 34,
-    shortage_qty_7d_avg: 0,
-    shortage_qty_30d_avg: 0,
-    shortage_freq_7d: 0,
-    shortage_freq_30d: 0,
-    is_shortage: 0,
-  },
-  {
-    item_encoded: 4,
-    total_observations: 744,
-    historical_shortage_prob: 0.018817204,
-    avg_shortage_qty: 0.119623656,
-    max_shortage_qty: 56,
-    total_shortage_qty: 89,
-    shortage_qty_7d_avg: 0,
-    shortage_qty_30d_avg: 0,
-    shortage_freq_7d: 0,
-    shortage_freq_30d: 0,
-    is_shortage: 0,
-  },
-  {
-    item_encoded: 5,
-    total_observations: 744,
-    historical_shortage_prob: 0.009408602,
-    avg_shortage_qty: 0.044354839,
-    max_shortage_qty: 17,
-    total_shortage_qty: 33,
-    shortage_qty_7d_avg: 0,
-    shortage_qty_30d_avg: 0,
-    shortage_freq_7d: 0,
-    shortage_freq_30d: 0,
-    is_shortage: 0,
-  },
-];
+const url = "http://10.145.177.237:8000/";
 
 export default function InventorySearchForm() {
   const [itemId, setItemId] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [predictionType, setPredictionType] = useState("predict_precision");
   const [searchPerformed, setSearchPerformed] = useState(false);
-  const [filteredData, setFilteredData] = useState<InventoryItem[]>([]);
+
+  const [inventoryData, setInventoryData] = useState<InventoryItem[]>([]);
+
+  const getShortageProb = async (items: InventoryItem[]) => {
+    try {
+      if (!date) {
+        console.error("Date is not selected.");
+        return;
+      }
+
+      const dateSplit = {
+        day_of_week: date.getDay(),
+        month: date.getMonth() + 1,
+        quarter: Math.floor(date.getMonth() / 3) + 1,
+        year: date.getFullYear(),
+        is_weekend: date.getDay() === 0 || date.getDay() === 6,
+      }
+
+      const promises = items.map(async (item) =>
+        fetch(url + predictionType, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...item,
+            ...dateSplit
+          }),
+        })
+          .then(async (res) => {
+            const data = await res.json();
+            if (res.ok) {
+              return {
+                ...item,
+                probability: data.probability,
+              };
+            } else {
+              console.error("Error fetching shortage probability:", data);
+              return item;
+            }
+          })
+          .catch((error) => {
+            console.error("Error fetching shortage probability:", error);
+            return item;
+          })
+      );
+
+      const result = await Promise.all(promises);
+
+      console.log("Fetched shortage probabilities:", result);
+
+      setInventoryData(result);
+    } catch (error) {
+      console.error("Error fetching shortage probability:", error);
+    }
+  };
 
   // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Filter data based on item ID
-    // In a real application, you would fetch data from an API based on both itemId and date
-    const filtered = itemId
-      ? inventoryData.filter((item) => item.item_encoded.toString() === itemId)
-      : inventoryData;
+    let res: InventoryItem[] | null = null;
 
-    setFilteredData(filtered);
+    if (!itemId) {
+      res = await getInventoryItems(1, 50);
+    } else {
+      res = await getInventoryItemById(Number(itemId));
+    }
+
+    if (!res) {
+      console.error("Failed to fetch inventory items.");
+      return;
+    }
+
+    await getShortageProb(res);
+
     setSearchPerformed(true);
   };
 
@@ -160,7 +157,7 @@ export default function InventorySearchForm() {
               Date
             </Label>
             <Popover>
-              <PopoverTrigger asChild className="text-black ">
+              <PopoverTrigger asChild className="">
                 <Button
                   id="date"
                   variant="outline"
@@ -182,6 +179,22 @@ export default function InventorySearchForm() {
                 />
               </PopoverContent>
             </Popover>
+          </div>
+
+          <div>
+            <Select defaultValue="precision" onValueChange={setPredictionType}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select a fruit" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Fruits</SelectLabel>
+                  <SelectItem value="predict_precision">Precision</SelectItem>
+                  <SelectItem value="predict_recall">Recall</SelectItem>
+                  <SelectItem value="predict_hybrid">Hybrid</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
 
           <Button type="submit" className="border-white border-2">
@@ -208,7 +221,7 @@ export default function InventorySearchForm() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {filteredData.length > 0 ? (
+              {inventoryData.length > 0 ? (
                 <div className="border rounded-md overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -250,7 +263,7 @@ export default function InventorySearchForm() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredData.map((item) => (
+                        {inventoryData.map((item) => (
                           <tr
                             key={item.item_encoded}
                             className="border-b hover:bg-muted/50"
