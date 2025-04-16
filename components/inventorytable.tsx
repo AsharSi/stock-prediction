@@ -67,8 +67,10 @@ export default function InventorySearchForm() {
         month: date.getMonth() + 1,
         quarter: Math.floor(date.getMonth() / 3) + 1,
         year: date.getFullYear(),
-        is_weekend: date.getDay() === 0 || date.getDay() === 6,
+        is_weekend: (date.getDay() === 0 || date.getDay() === 6) ? 1 : 0,
       }
+
+      console.log("Date split:", dateSplit);
 
       const promises = items.map(async (item) =>
         fetch(url + predictionType, {
