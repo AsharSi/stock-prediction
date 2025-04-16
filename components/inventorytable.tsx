@@ -28,6 +28,7 @@ import {
   getInventoryItemById,
   getInventoryItems,
 } from "@/actions/inventoryActions";
+import Loader from "./loader";
 
 // Define the type for our inventory data
 interface InventoryItem {
@@ -45,17 +46,18 @@ interface InventoryItem {
   probability: number;
 }
 
-const url = "http://10.145.177.237:8000/";
+const url = "http://10.145.153.156:8000/";
 
 export default function InventorySearchForm() {
   const [itemId, setItemId] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [predictionType, setPredictionType] = useState("predict_precision");
   const [searchPerformed, setSearchPerformed] = useState(false);
-
+  const [isLoading, setIsLoading] = useState(false);
   const [inventoryData, setInventoryData] = useState<InventoryItem[]>([]);
 
   const getShortageProb = async (items: InventoryItem[]) => {
+    setIsLoading(true);
     try {
       if (!date) {
         console.error("Date is not selected.");
@@ -67,8 +69,8 @@ export default function InventorySearchForm() {
         month: date.getMonth() + 1,
         quarter: Math.floor(date.getMonth() / 3) + 1,
         year: date.getFullYear(),
-        is_weekend: (date.getDay() === 0 || date.getDay() === 6) ? 1 : 0,
-      }
+        is_weekend: date.getDay() === 0 || date.getDay() === 6 ? 1 : 0,
+      };
 
       console.log("Date split:", dateSplit);
 
@@ -79,8 +81,10 @@ export default function InventorySearchForm() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            ...item,
-            ...dateSplit
+            data: {
+              ...item,
+              ...dateSplit,
+            },
           }),
         })
           .then(async (res) => {
@@ -108,6 +112,8 @@ export default function InventorySearchForm() {
       setInventoryData(result);
     } catch (error) {
       console.error("Error fetching shortage probability:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -133,6 +139,15 @@ export default function InventorySearchForm() {
     setSearchPerformed(true);
   };
 
+  // Sort inventory data by probability in descending order
+  const sortInventoryData = (method: string) => {
+    const sortedData = [...inventoryData].sort(
+      (a, b) =>
+        b[method as keyof InventoryItem] - a[method as keyof InventoryItem]
+    );
+    setInventoryData(sortedData);
+  };
+
   // Format decimal numbers to a consistent format
   const formatDecimal = (value: number) => {
     return value.toFixed(6);
@@ -140,6 +155,7 @@ export default function InventorySearchForm() {
 
   return (
     <div className="container mx-auto py-8">
+      {isLoading && <Loader />}
       <form onSubmit={handleSubmit} className="space-y-6 text-white">
         <div className="flex items-end justify-items-start gap-8">
           <div className="w-full max-w-md">
@@ -164,7 +180,7 @@ export default function InventorySearchForm() {
                   id="date"
                   variant="outline"
                   className={cn(
-                    "w-full justify-start text-left font-normal",
+                    "w-full justify-start text-left bg-transparent font-normal",
                     !date && "text-muted-foreground"
                   )}
                 >
@@ -184,7 +200,13 @@ export default function InventorySearchForm() {
           </div>
 
           <div>
-            <Select defaultValue="precision" onValueChange={setPredictionType}>
+            <Label htmlFor="predictionType" className="mb-2">
+              Prediction Type
+            </Label>
+            <Select
+              defaultValue="predict_precision"
+              onValueChange={setPredictionType}
+            >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Select a fruit" />
               </SelectTrigger>
@@ -229,7 +251,10 @@ export default function InventorySearchForm() {
                     <table className="w-full">
                       <thead>
                         <tr className="bg-muted border-b">
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                          <th
+                            className="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+                            onClick={() => sortInventoryData("item_encoded")}
+                          >
                             Item ID
                           </th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
@@ -241,10 +266,20 @@ export default function InventorySearchForm() {
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
                             Avg Shortage Qty
                           </th>
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                          <th
+                            className="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+                            onClick={() =>
+                              sortInventoryData("max_shortage_qty")
+                            }
+                          >
                             Max Shortage Qty
                           </th>
-                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                          <th
+                            className="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+                            onClick={() =>
+                              sortInventoryData("total_shortage_qty")
+                            }
+                          >
                             Total Shortage Qty
                           </th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
@@ -261,6 +296,12 @@ export default function InventorySearchForm() {
                           </th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
                             Is Shortage
+                          </th>
+                          <th
+                            className="h-12 px-4 text-left align-middle font-medium text-muted-foreground"
+                            onClick={() => sortInventoryData("probability")}
+                          >
+                            Probability
                           </th>
                         </tr>
                       </thead>
@@ -302,6 +343,9 @@ export default function InventorySearchForm() {
                             </td>
                             <td className="p-4 align-middle">
                               {item.is_shortage}
+                            </td>
+                            <td className="p-4 align-middle">
+                              {formatDecimal(item.probability)}
                             </td>
                           </tr>
                         ))}
