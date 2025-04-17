@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
@@ -7,8 +7,28 @@ from tensorflow.keras.models import load_model
 import uvicorn
 import joblib
 from typing import List, Dict
+from fastapi.middleware.cors import CORSMiddleware
+
+
 
 app = FastAPI()
+
+origins = [
+    "http://localhost:3000",     # if you're running frontend on React
+    "http://10.145.153.156:3000",  # or whatever your frontend IP/port is
+    ""  # You can use "" for testing, but restrict in production
+]
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Allows frontend origins
+    allow_credentials=True,
+    allow_methods=["*"],    # Allows all methods, including OPTIONS
+    allow_headers=["*"],    # Allows all headers
+)
+
+
 
 MODEL_PATH = "model_high_recall.h5"  
 model = load_model(MODEL_PATH)
@@ -56,7 +76,7 @@ def predict_xgb(input_json: ShortageInput):
         probabilities = xgb_model.predict_proba(input_array)[:, 1]
 
         return {
-            "Probability of Shortage": float(probabilities[0]),
+            "probability": float(probabilities[0]),
             "Threshold to Make Decision": THRESHOLD_P
         }
 
@@ -70,7 +90,7 @@ def predict(data: SingleDayInput):
     seq_data, static_data = preprocess_single_day(data.data)
     prediction = model.predict([seq_data, static_data])
     return {
-        "Probability of Shortage": float(prediction[0][0]),
+        "probability": float(prediction[0][0]),
         "Threshold to Make Decision": THRESHOLD_R
         }
 
@@ -108,13 +128,55 @@ def predict_hybrid(input_json: HybridInput):
         prediction = int(final_prob > THRESHOLD_H)
 
         return {
-            "Probability of Shortage": float(final_prob),
+            "probability": float(final_prob),
             "Threshold to Make Decision": THRESHOLD_H
         }
 
     except Exception as e:
         return {"error": str(e)}
     
+# Chatbot API development
+
+import chromadb
+from langchain.chains import RetrievalQA  
+from langchain.vectorstores import Chroma 
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.llms import CTransformers
+
+class QueryRequest(BaseModel):
+    query: str
+
+class QueryResponse(BaseModel):
+    answer: str
+    sources: list
+
+
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+chroma_client = chromadb.Client()
+collection = chroma_client.get_or_create_collection(name="sc_collection")
+
+retriever = Chroma(
+    collection_name="sc_collection",
+    embedding_function=embeddings
+).as_retriever()
+
+llm=CTransformers(model="llama-2-7b-chat.ggmlv3.q4_0.bin",model_type="llama",config={'max_new_tokens':512,'temperature':0.8})
+
+qa_chain = RetrievalQA.from_chain_type(llm=llm,chain_type="stuff",retriever=retriever,return_source_documents=True,)
+
+@app.post("/rag", response_model=QueryResponse)
+def ask_question(request: QueryRequest):
+    try:
+        result = qa_chain(request.query)
+        answer = result["result"]
+        sources = [doc.metadata for doc in result["source_documents"]]
+        return QueryResponse(answer=answer, sources=sources)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 def root():
     return {"message": "Shortage Prediction API is running!"}
+

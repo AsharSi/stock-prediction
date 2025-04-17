@@ -212,10 +212,10 @@ export default function InventorySearchForm() {
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectLabel>Fruits</SelectLabel>
-                  <SelectItem value="predict_precision">Precision</SelectItem>
-                  <SelectItem value="predict_recall">Recall</SelectItem>
-                  <SelectItem value="predict_hybrid">Hybrid</SelectItem>
+                  <SelectLabel>Prediction Model</SelectLabel>
+                  <SelectItem value="predict_precision">Accurate Alert Model</SelectItem>
+                  <SelectItem value="predict_recall">Max Coverage Model</SelectItem>
+                  <SelectItem value="predict_hybrid">Smart Tradeoff Model</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
